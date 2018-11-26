@@ -67,7 +67,7 @@ available config options are:
 
         -   `*` matches any string (excluding slash `/`);
 
-        -   `**` matches any string (including slash '/');
+        -   `**` matches any string (including slash `/`);
 
         -   `[...]`: matches any one of the enclosed characters;
 
