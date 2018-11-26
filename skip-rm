@@ -1,0 +1,245 @@
+#!/bin/bash
+
+##  ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+##  skip important files and dirs during rm;
+##  ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+set -eo pipefail
+
+##  ============================================================================
+##  functions;
+##  ============================================================================
+
+##  die with error message and code;
+##
+##  $1
+##  :   error message;
+die() {
+    printf "error: %s\n" "$1" >&2; exit 1
+}
+
+##  print a skip message;
+##
+##  $1
+##  :   skipped file;
+skip() {
+    printf "skipping: %s\n" "$1" >&2
+}
+
+##  translate glob pattern into regex pattern;
+##
+##  $1
+##  :   glob pattern;
+translate() {
+    local pat="$1" i=0 n=${#pat} ans=""
+    while ((i<n)); do
+        c="${pat:i:1}"
+        if [[ "$c" == "?" ]]; then
+            ans="${ans}[^\/]"
+        elif [[ "$c" == "*" ]]; then
+            if ((i+1<n)) && [[ "${pat:i+1:1}" == "*" ]]; then
+                ans="${ans}.*"
+                ((i++))
+            else
+                ans="${ans}[^\/]*"
+            fi
+        elif [[ "$c" == "[" ]]; then
+            ((j=i+1))
+            while ((j<n)) && [[ ${pat:j:1} != "]" ]]; do
+                ((j++))
+            done
+            if ((j>=n)); then
+                ans="${ans}\\["
+            else
+                s=$(echo -n "${pat:i+1:j-i-1}" | sed -e 's/\\/\\\\/g')
+                if [[ ${s:0:1} == "!" ]] || [[ ${s:0:1} == "^" ]]; then
+                    s="^${s:1}"
+                fi
+                ans="${ans}[${s}]"
+                ((i=j))
+            fi
+        else
+            if [[ "/()[]{}?*+-|^$\\.&~# " == *"$c"* ]]; then
+                ans="${ans}\\${c}"
+            else
+                ans="${ans}${c}"
+            fi
+        fi
+        ((i++))
+    done
+    echo "$ans"
+}
+
+##  test whether a filename (using its realpath) matches any pattern;
+##
+##  $1
+##  :   matcher;
+##  $2
+##  :   filename;
+##  ${@:3}
+##  :   patterns;
+match() {
+    local mat="$1" fname="$2" pats=("${@:3}")
+    local rpath; rpath=$(realpath -ms "$fname")
+
+    if [[ "$mat" == "string" ]]; then
+        for pat in "${pats[@]}"; do
+            [[ "$rpath" == "$pat" ]] && return 0
+        done
+    elif [[ "$mat" == "glob" ]]; then
+        for pat in "${pats[@]}"; do
+            rpat="^""$(translate "$pat")""$"
+            [[ "$rpath" =~ $rpat ]] && return 0
+        done
+    elif [[ "$mat" == "regex" ]]; then
+        for pat in "${pats[@]}"; do
+            rpat="^""$pat""$"
+            [[ "$rpath" =~ $rpat ]] && return 0
+        done
+    fi
+
+    return 1
+}
+
+##  ============================================================================
+##  read config;
+##  ============================================================================
+
+##  config files (in search order);
+confs=(
+"${HOME}/.config/skip-rm/skip-rm.conf"
+"/etc/skip-rm/skip-rm.conf"
+)
+
+##  use first available config;
+for conf in "${confs[@]}"; do
+    [[ -f "$conf" ]] && break
+done
+[[ -f "$conf" ]] || die "no config file;"
+
+##  config key: command;
+cmd=$(jq -r ".command" "$conf")
+[[ "$cmd" != "null" ]] || die "no command in config;"
+
+##  config key: matcher;
+mat=$(jq -r ".matcher" "$conf")
+[[ "$mat" != "null" ]] || die "no matcher in config;"
+
+##  config key: mode;
+mode=$(jq -r ".mode" "$conf")
+[[ "$mode" != "null" ]] || die "no mode in config;"
+
+if [[ "$mode" == "blacklist" ]]; then
+    ##  config key: blacklist;
+    bfile=$(jq -r ".blacklist" "$conf")
+    [[ "$bfile" != "null" ]] || die "no blacklist in config;"
+    blist=()
+    while IFS= read -r line; do
+        blist+=("${line/\~/$HOME}")
+    done < "${bfile/\~/$HOME}"
+elif [[ "$mode" == "whitelist" ]]; then
+    ##  config key: whitelist;
+    wfile=$(jq -r ".whitelist" "$conf")
+    [[ "$wfile" != "null" ]] || die "no whitelist in config;"
+    wlist=()
+    while IFS= read -r line; do
+        wlist+=("${line/\~/$HOME}")
+    done < "${wfile/\~/$HOME}"
+else
+    die "invalid mode: ${mode};"
+fi
+
+##  ============================================================================
+##  filter command-line args;
+##
+##  -   a single dash is treated like a positional argument;
+##
+##  -   a double dash is always passed;
+##
+##  -   options before a double dash are always passed; options after a double
+##      dash are treated like positional arguments;
+##
+##  -   positional arguments are filtered;
+##  ============================================================================
+
+args=()
+if [[ "$mode" == "blacklist" ]]; then
+    ddash=0
+    while (( $# != 0 )); do
+        case "$1" in
+            -)
+                if ! match "$mat" "$1" "${blist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+            --)
+                ddash=1
+                args+=("$1")
+                shift
+                ;;
+            -*)
+                if ! (($ddash)) || ! match "$mat" "$1" "${blist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+            *)
+                if ! match "$mat" "$1" "${blist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+elif [[ "$mode" == "whitelist" ]]; then
+    ddash=0
+    while (( $# != 0 )); do
+        case "$1" in
+            -)
+                if match "$mat" "$1" "${wlist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+            --)
+                ddash=1
+                args+=("$1")
+                shift
+                ;;
+            -*)
+                if ! (($ddash)) || match "$mat" "$1" "${wlist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+            *)
+                if match "$mat" "$1" "${wlist[@]}"; then
+                    args+=("$1")
+                else
+                    skip "$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+else
+    die "invalid mode: ${mode};"
+fi
+
+##  ============================================================================
+##  call builtin rm with filtered args;
+##  ============================================================================
+
+"$cmd" "${args[@]}"
+
