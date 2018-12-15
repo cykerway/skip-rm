@@ -3,9 +3,9 @@
 skip important files and dirs during rm;
 
 in the past, users have reported success in deleting their home dir, root dir,
-and much more; skip-rm helps you prevent such accidental deletions through
-filename checks; you specify which files to and not to delete, and skip-rm does
-the rest for you;
+and much more; skip-rm helps you prevent such accidental deletions by checking
+filenames; you specify which files to and not to delete, and skip-rm does the
+rest for you;
 
 ## install
 
@@ -31,14 +31,14 @@ to install into user config dir:
 
 to test with the default config (do not test with important files):
 
-    skip-rm <files-to-remove>
+    skip-rm {files-to-remove}
 
 if everything is good, alias `rm` to `skip-rm`:
 
     alias rm='skip-rm'
 
 `skip-rm` is designed as a wrapper of and a drop-in replacement for `rm`; it is
-recommened to alias `rm` to `skip-rm` in bashrc; then simply run `rm` as normal,
+recommened to alias `rm` to `skip-rm` in bashrc; then simply run `rm` as usual,
 knowing important files and dirs will be protected from deletion;
 
 ## config
