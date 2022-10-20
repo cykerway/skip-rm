@@ -15,6 +15,8 @@ this tool has several implementations:
 
 -   `go/README.md`;
 
+-   `rust/README.md`;
+
 these implementations are independent, and you can choose any one of them; but
 beware there may be minor differences among these implementations, which means
 they may not give exactly the same behavior; double check the source code, and
@@ -22,8 +24,9 @@ make sure you understand what is happening before use; open an issue if needed;
 
 the bash implementation has longer history and tends to be more stable; but it
 is very slow when there are a lot of filenames; the go implementation is newer
-and faster, but has a higher chance of malfunction; you are advised to do some
-dryrun (using a fake `rm`) before deploying this tool so as to not have a pity;
+and faster, but has a higher chance of malfunction; the rust implementation is
+even newer and less mature; you are strongly advised to do some dry-run (using
+fake `rm`) before deploying this tool; it is better safe than sorry;
 
 these implementations share the same config files; a sample config is provided
 in `config` dir; the entire config has a json file plus some lists of patterns;
